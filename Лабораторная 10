@@ -1,1 +1,357 @@
 
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <fstream>
+#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <map>
+
+using namespace std;
+
+class InvalidAccessLevelException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "Invalid access level!";
+    }
+};
+
+class EmptyNameException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "Name cannot be empty!";
+    }
+};
+
+class FileOperationException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "File operation failed!";
+    }
+};
+
+class User {
+protected:
+    string name;
+    int id;
+    int accessLevel;
+
+    void validate() const {
+        if (name.empty()) throw EmptyNameException();
+        if (accessLevel < 1 || accessLevel > 3) throw InvalidAccessLevelException();
+    }
+
+public:
+    User(const string& name, int id, int accessLevel)
+        : name(name), id(id), accessLevel(accessLevel) {
+        validate();
+    }
+
+    virtual ~User() = default;
+
+    string getName() const { return name; }
+    int getId() const { return id; }
+    int getAccessLevel() const { return accessLevel; }
+
+    virtual void displayInfo() const {
+        cout << "ID: " << id << ", Name: " << name
+            << ", Access Level: " << accessLevel;
+    }
+
+    virtual void saveToFile(ofstream& file) const {
+        file << id << " " << accessLevel << " " << name.size() << " " << name;
+    }
+};
+
+class Student : public User {
+private:
+    string group;
+
+public:
+    Student(const string& name, int id, const string& group)
+        : User(name, id, 1), group(group) {
+    }
+
+    void displayInfo() const override {
+        User::displayInfo();
+        cout << ", Type: Student, Group: " << group << endl;
+    }
+
+    void saveToFile(ofstream& file) const override {
+        file << "STUDENT ";
+        User::saveToFile(file);
+        file << " " << group.size() << " " << group;
+    }
+
+    string getGroup() const { return group; }
+};
+
+class Teacher : public User {
+private:
+    string department;
+
+public:
+    Teacher(const string& name, int id, const string& department)
+        : User(name, id, 2), department(department) {
+    }
+
+    void displayInfo() const override {
+        User::displayInfo();
+        cout << ", Type: Teacher, Department: " << department << endl;
+    }
+
+    void saveToFile(ofstream& file) const override {
+        file << "TEACHER ";
+        User::saveToFile(file);
+        file << " " << department.size() << " " << department;
+    }
+
+    string getDepartment() const { return department; }
+};
+
+class Administrator : public User {
+private:
+    string position;
+
+public:
+    Administrator(const string& name, int id, const string& position)
+        : User(name, id, 3), position(position) {
+    }
+
+    void displayInfo() const override {
+        User::displayInfo();
+        cout << ", Type: Administrator, Position: " << position << endl;
+    }
+
+    void saveToFile(ofstream& file) const override {
+        file << "ADMIN ";
+        User::saveToFile(file);
+        file << " " << position.size() << " " << position;
+    }
+
+    string getPosition() const { return position; }
+};
+
+class Resource {
+private:
+    string name;
+    int requiredAccessLevel;
+
+public:
+    Resource(const string& name, int requiredAccessLevel)
+        : name(name), requiredAccessLevel(requiredAccessLevel) {
+        if (requiredAccessLevel < 1 || requiredAccessLevel > 3)
+            throw InvalidAccessLevelException();
+    }
+
+    string getName() const { return name; }
+    int getRequiredAccessLevel() const { return requiredAccessLevel; }
+
+    bool checkAccess(const User& user) const {
+        return user.getAccessLevel() >= requiredAccessLevel;
+    }
+
+    void saveToFile(ofstream& file) const {
+        file << name.size() << " " << name << " " << requiredAccessLevel;
+    }
+};
+
+template<typename T>
+class AccessControlSystem {
+private:
+    vector<unique_ptr<User>> users;
+    vector<T> resources;
+
+public:
+    void addUser(unique_ptr<User> user) {
+        users.push_back(move(user));
+    }
+
+    void addResource(const T& resource) {
+        resources.push_back(resource);
+    }
+
+    bool checkAccess(int userId, const string& resourceName) const {
+        auto userIt = find_if(users.begin(), users.end(),
+            [userId](const unique_ptr<User>& u) { return u->getId() == userId; });
+
+        auto resIt = find_if(resources.begin(), resources.end(),
+            [resourceName](const T& r) { return r.getName() == resourceName; });
+
+        if (userIt == users.end() || resIt == resources.end())
+            return false;
+
+        return resIt->checkAccess(**userIt);
+    }
+
+    void displayAllUsers() const {
+        for (const auto& user : users) {
+            user->displayInfo();
+        }
+    }
+
+    void displayAllResources() const {
+        for (const auto& res : resources) {
+            cout << "Resource: " << res.getName()
+                << ", Required Access: " << res.getRequiredAccessLevel() << endl;
+        }
+    }
+
+    void saveToFile(const string& filename) const {
+        ofstream file(filename);
+        if (!file) throw FileOperationException();
+
+        file << users.size() << endl;
+        for (const auto& user : users) {
+            user->saveToFile(file);
+            file << endl;
+        }
+
+        file << resources.size() << endl;
+        for (const auto& res : resources) {
+            res.saveToFile(file);
+            file << endl;
+        }
+    }
+
+    void loadFromFile(const string& filename) {
+        ifstream file(filename);
+        if (!file) throw FileOperationException();
+
+        users.clear();
+        resources.clear();
+
+        int userCount;
+        file >> userCount;
+        file.ignore();
+
+        for (int i = 0; i < userCount; ++i) {
+            string type;
+            file >> type;
+
+            int id, accessLevel, nameSize;
+            file >> id >> accessLevel >> nameSize;
+            file.ignore();
+
+            string name(nameSize, ' ');
+            file.read(&name[0], nameSize);
+
+            if (type == "STUDENT") {
+                int groupSize;
+                file >> groupSize;
+                file.ignore();
+
+                string group(groupSize, ' ');
+                file.read(&group[0], groupSize);
+                users.push_back(make_unique<Student>(name, id, group));
+            }
+            else if (type == "TEACHER") {
+                int deptSize;
+                file >> deptSize;
+                file.ignore();
+
+                string dept(deptSize, ' ');
+                file.read(&dept[0], deptSize);
+                users.push_back(make_unique<Teacher>(name, id, dept));
+            }
+            else if (type == "ADMIN") {
+                int posSize;
+                file >> posSize;
+                file.ignore();
+
+                string pos(posSize, ' ');
+                file.read(&pos[0], posSize);
+                users.push_back(make_unique<Administrator>(name, id, pos));
+            }
+        }
+
+        int resCount;
+        file >> resCount;
+        file.ignore();
+
+        for (int i = 0; i < resCount; ++i) {
+            int nameSize;
+            file >> nameSize;
+            file.ignore();
+
+            string name(nameSize, ' ');
+            file.read(&name[0], nameSize);
+
+            int reqAccess;
+            file >> reqAccess;
+            resources.emplace_back(name, reqAccess);
+        }
+    }
+
+    vector<User*> findUsersByName(const string& name) const {
+        vector<User*> result;
+        for (const auto& user : users) {
+            if (user->getName() == name) {
+                result.push_back(user.get());
+            }
+        }
+        return result;
+    }
+
+    User* findUserById(int id) const {
+        auto it = find_if(users.begin(), users.end(),
+            [id](const unique_ptr<User>& u) { return u->getId() == id; });
+        return it != users.end() ? it->get() : nullptr;
+    }
+
+    void sortUsersByAccessLevel() {
+        sort(users.begin(), users.end(),
+            [](const unique_ptr<User>& a, const unique_ptr<User>& b) {
+                return a->getAccessLevel() < b->getAccessLevel();
+            });
+    }
+};
+
+int main() {
+    setlocale(LC_ALL, "Russian");
+    try {
+        AccessControlSystem<Resource> system;
+
+        system.addUser(make_unique<Student>("Иван Иванов", 1, "Группа 101"));
+        system.addUser(make_unique<Teacher>("Петр Петров", 2, "Кафедра математики"));
+        system.addUser(make_unique<Administrator>("Сидор Сидоров", 3, "Директор"));
+
+        system.addResource(Resource("Аудитория 101", 1));
+        system.addResource(Resource("Лаборатория 205", 2));
+        system.addResource(Resource("Серверная", 3));
+
+        cout << "Все пользователи:" << endl;
+        system.displayAllUsers();
+
+        cout << "\nПроверка доступа:" << endl;
+        cout << "Студент в аудитории 101: " << (system.checkAccess(1, "Аудитория 101") ? "Доступ разрешен" : "Доступ запрещен") << endl;
+        cout << "Студент в серверной: " << (system.checkAccess(1, "Серверная") ? "Доступ разрешен" : "Доступ запрещен") << endl;
+
+        system.saveToFile("university_system.txt");
+
+        AccessControlSystem<Resource> loadedSystem;
+        loadedSystem.loadFromFile("university_system.txt");
+
+        cout << "\nЗагруженные данные:" << endl;
+        loadedSystem.displayAllUsers();
+        loadedSystem.displayAllResources();
+
+        cout << "\nПоиск пользователей:" << endl;
+        auto foundUsers = loadedSystem.findUsersByName("Иван Иванов");
+        for (auto user : foundUsers) {
+            user->displayInfo();
+        }
+
+        cout << "\nСортировка пользователей по уровню доступа:" << endl;
+        loadedSystem.sortUsersByAccessLevel();
+        loadedSystem.displayAllUsers();
+
+    }
+    catch (const exception& e) {
+        cerr << "Ошибка: " << e.what() << endl;
+        return 1;
+    }
+
+    return 0;
+}
