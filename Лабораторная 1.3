@@ -45,7 +45,7 @@ public:
     void attack(Entity& target) override {
         int damage = attackPower - target.getDefense();
         if (damage > 0) {
-            if (rand() % 100 < 20) { // Критический удар (20%)
+            if (rand() % 100 < 20) { 
                 damage *= 2;
                 cout << "Critical hit! ";
             }
@@ -80,7 +80,7 @@ public:
     void attack(Entity& target) override {
         int damage = attackPower - target.getDefense();
         if (damage > 0) {
-            if (rand() % 100 < 30) { // Ядовитая атака (30%)
+            if (rand() % 100 < 30) {
                 damage += 5;
                 cout << "Poisonous attack! ";
             }
@@ -98,7 +98,6 @@ public:
     }
 };
 
-// Новый класс Boss, унаследованный от Monster
 class Boss : public Monster {
 public:
     Boss(const string& n, int h, int a, int d)
@@ -108,7 +107,7 @@ public:
     void attack(Entity& target) override {
         int damage = attackPower - target.getDefense();
         if (damage > 0) {
-            if (rand() % 100 < 40) { // Луч болезни (40% вероятность)
+            if (rand() % 100 < 40) { 
                 damage += 10;
                 cout << "Ray of Disease! ";
             }
@@ -136,21 +135,17 @@ int main() {
 
     Entity* entities[] = { &hero, &goblin, &dragon };
 
-    // Вывод информации о всех сущностях
     for (auto& entity : entities) {
         entity->displayInfo();
     }
 
-    // Бой
     hero.attack(goblin);
     goblin.attack(hero);
     dragon.attack(hero);
 
-    // Лечение персонажа
     cout << "\nHero decides to heal...\n";
     hero.heal(30);
 
-    // Вывод обновлённой информации
     cout << "\nUpdated Stats:\n";
     for (auto& entity : entities) {
         entity->displayInfo();
