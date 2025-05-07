@@ -1,1 +1,141 @@
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <fstream>
+#include <stdexcept>
 
+using namespace std;
+
+class Entity {
+public:
+    virtual void displayInfo() const = 0;
+    virtual int getHealth() const = 0;
+    virtual int getLevel() const = 0;
+    virtual string getName() const = 0;
+    virtual string getType() const = 0;
+    virtual ~Entity() = default;
+
+    virtual void save(ofstream& file) const = 0;
+};
+
+class Player : public Entity {
+    string name;
+    int health;
+    int level;
+public:
+    Player(string n = "", int h = 0, int l = 0) : name(n), health(h), level(l) {}
+
+    void displayInfo() const override {
+        cout << "Player: " << name << " (HP: " << health << ", Lvl: " << level << ")\n";
+    }
+    int getHealth() const override { return health; }
+    int getLevel() const override { return level; }
+    string getName() const override { return name; }
+    string getType() const override { return "Player"; }
+
+    void save(ofstream& file) const override {
+        file << "Player " << name << " " << health << " " << level << "\n";
+    }
+};
+
+class Enemy : public Entity {
+    string name;
+    int health;
+    string type;
+public:
+    Enemy(string n = "", int h = 0, string t = "") : name(n), health(h), type(t) {}
+
+    void displayInfo() const override {
+        cout << "Enemy: " << name << " (HP: " << health << ", Type: " << type << ")\n";
+    }
+    int getHealth() const override { return health; }
+    int getLevel() const override { return 0; }
+    string getName() const override { return name; }
+    string getType() const override { return type; }
+
+    void save(ofstream& file) const override {
+        file << "Enemy " << name << " " << health << " " << type << "\n";
+    }
+};
+
+template <typename T>
+class GameManager {
+    vector<T> entities;
+public:
+    void addEntity(const T& entity) {
+        if (entity->getHealth() <= 0) {
+            throw invalid_argument("Entity has invalid health");
+        }
+        entities.push_back(entity);
+    }
+
+    void displayAll() const {
+        for (const auto& entity : entities) {
+            entity->displayInfo();
+        }
+    }
+
+    void saveToFile(const string& filename) const {
+        ofstream file(filename);
+        if (!file) {
+            throw runtime_error("Failed to open file for writing");
+        }
+
+        for (const auto& entity : entities) {
+            entity->save(file);
+        }
+    }
+
+    void loadFromFile(const string& filename) {
+        ifstream file(filename);
+        if (!file) {
+            throw runtime_error("Failed to open file for reading");
+        }
+
+        entities.clear();
+        string type;
+        while (file >> type) {
+            if (type == "Player") {
+                string name;
+                int health, level;
+                file >> name >> health >> level;
+                addEntity(make_shared<Player>(name, health, level));
+            }
+            else if (type == "Enemy") {
+                string name, enemyType;
+                int health;
+                file >> name >> health >> enemyType;
+                addEntity(make_shared<Enemy>(name, health, enemyType));
+            }
+        }
+    }
+};
+
+int main() {
+    try {
+        GameManager<shared_ptr<Entity>> manager;
+
+        manager.addEntity(make_shared<Player>("Hero", 100, 5));
+        manager.addEntity(make_shared<Enemy>("Goblin", 50, "Forest"));
+        manager.addEntity(make_shared<Player>("Mage", 80, 3));
+
+        cout << "Original characters:\n";
+        manager.displayAll();
+
+        manager.saveToFile("game_save.txt");
+        cout << "\nData saved to file.\n";
+
+        GameManager<shared_ptr<Entity>> loadedManager;
+        loadedManager.loadFromFile("game_save.txt");
+
+        cout << "\nLoaded characters:\n";
+        loadedManager.displayAll();
+
+    }
+    catch (const exception& e) {
+        cerr << "Error: " << e.what() << endl;
+        return 1;
+    }
+
+    return 0;
+}
