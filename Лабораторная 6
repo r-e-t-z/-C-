@@ -1,1 +1,115 @@
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <stdexcept>
 
+using namespace std;
+
+class Entity {
+public:
+    virtual void displayInfo() const = 0;
+    virtual int getHealth() const = 0;
+    virtual ~Entity() = default;
+};
+
+class Player : public Entity {
+    string name;
+    int health;
+    int level;
+public:
+    Player(string n, int h, int l) : name(n), health(h), level(l) {}
+    void displayInfo() const override {
+        cout << "Player: " << name << " (HP: " << health << ", Lvl: " << level << ")\n";
+    }
+    int getHealth() const override { return health; }
+};
+
+class Enemy : public Entity {
+    string name;
+    int health;
+    string type;
+public:
+    Enemy(string n, int h, string t) : name(n), health(h), type(t) {}
+    void displayInfo() const override {
+        cout << "Enemy: " << name << " (HP: " << health << ", Type: " << type << ")\n";
+    }
+    int getHealth() const override { return health; }
+};
+
+template <typename T>
+class GameManager {
+    vector<T> entities;
+public:
+    void addEntity(const T& entity) {
+        if (entity->getHealth() <= 0) {
+            throw invalid_argument("Entity has invalid health (must be positive)");
+        }
+        entities.push_back(entity);
+    }
+    void displayAll() const {
+        for (const auto& entity : entities) {
+            entity->displayInfo();
+        }
+    }
+};
+
+template <typename T>
+class Queue {
+    vector<T> elements;
+public:
+    void push(const T& item) {
+        elements.push_back(item);
+    }
+    T pop() {
+        if (elements.empty()) {
+            throw out_of_range("Cannot pop from empty queue");
+        }
+        T first = elements.front();
+        elements.erase(elements.begin());
+        return first;
+    }
+    void display() const {
+        if (elements.empty()) {
+            cout << "Queue is empty\n";
+            return;
+        }
+        cout << "Queue: ";
+        for (const auto& elem : elements) {
+            cout << elem << " ";
+        }
+        cout << "\n";
+    }
+};
+
+int main() {
+    try {
+        cout << "=== GameManager ===\n";
+        GameManager<Entity*> manager;
+        manager.addEntity(new Player("Hero", 100, 1));
+        manager.addEntity(new Enemy("Goblin", 50, "Forest"));
+        manager.displayAll();
+
+        cout << "\n=== Invalid Entity ===\n";
+        manager.addEntity(new Player("Invalid", -50, 0));
+    }
+    catch (const invalid_argument& e) {
+        cerr << "GameManager Error: " << e.what() << endl;
+    }
+
+    try {
+        cout << "\n=== Queue ===\n";
+        Queue<int> intQueue;
+        intQueue.push(10);
+        intQueue.push(20);
+        intQueue.display();
+        cout << "Popped: " << intQueue.pop() << endl;
+        cout << "Popped: " << intQueue.pop() << endl;
+        cout << "Trying to pop empty queue...\n";
+        intQueue.pop();
+    }
+    catch (const out_of_range& e) {
+        cerr << "Queue Error: " << e.what() << endl;
+    }
+
+    return 0;
+}
