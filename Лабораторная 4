@@ -1,1 +1,57 @@
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
+using namespace std;
+
+class Inventory {
+private:
+    unique_ptr<string[]> items;
+    size_t capacity;
+    size_t size;
+
+    void resize() {
+        capacity *= 2;
+        auto newItems = make_unique<string[]>(capacity);
+        for (size_t i = 0; i < size; ++i) {
+            newItems[i] = move(items[i]);
+        }
+        items = move(newItems);
+    }
+
+public:
+    Inventory() : capacity(2), size(0) {
+        items = make_unique<string[]>(capacity);
+    }
+
+    void addItem(const string& item) {
+        if (size >= capacity) {
+            resize();
+        }
+        items[size++] = item;
+    }
+
+    void displayInventory() const {
+        if (size == 0) {
+            cout << "Inventory is empty." << endl;
+            return;
+        }
+        cout << "Inventory items:" << endl;
+        for (size_t i = 0; i < size; ++i) {
+            cout << "- " << items[i] << endl;
+        }
+    }
+};
+
+int main() {
+    Inventory inv;
+    inv.addItem("Sword");
+    inv.addItem("Health Potion");
+    inv.addItem("Bow");
+    inv.addItem("Mana Potion");
+
+    inv.displayInventory();
+
+    return 0;
+}
