@@ -1,1 +1,767 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <fstream>
+#include <stdexcept>
+#include <memory>
+#include <ctime>
+#include <algorithm>
+#include <random>
+#include <chrono>
+#include <thread>
+#include <limits>
 
+using namespace std;
+
+class Character;
+class Monster;
+
+class Logger {
+public:
+    static void log(const string& message) {
+        try {
+            ofstream file("game_log.txt", ios::app);
+            if (file) {
+                time_t now = time(nullptr);
+                if (now != -1) {
+                    char buf[26];
+                    ctime_s(buf, sizeof buf, &now);
+                    file << buf << message << "\n\n";
+                }
+            }
+        }
+        catch (...) {}
+    }
+};
+
+class Item {
+public:
+    string name;
+    string type;
+    int value;
+    int upgradeLevel;
+
+    Item(string n, string t, int v, int ul = 0) : name(n), type(t), value(v), upgradeLevel(ul) {
+        if (name.length() > 50) name = name.substr(0, 50);
+        if (type.length() > 20) type = type.substr(0, 20);
+    }
+
+    string getName() const {
+        return name + (upgradeLevel > 0 ? " +" + to_string(upgradeLevel) : "");
+    }
+};
+
+template<typename T>
+class Inventory {
+private:
+    vector<T> items;
+public:
+    void addItem(const T& item) {
+        try {
+            items.push_back(item);
+            Logger::log("Added item: " + item.getName());
+        }
+        catch (...) {
+            cerr << "Failed to add item to inventory\n";
+        }
+    }
+
+    bool removeItem(const string& itemName) {
+        for (auto it = items.begin(); it != items.end(); ++it) {
+            if (it->getName() == itemName) {
+                items.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    T* findItem(const string& itemName) {
+        for (auto& item : items) {
+            if (item.getName() == itemName) {
+                return &item;
+            }
+        }
+        return nullptr;
+    }
+
+    vector<T*> findWeapons() {
+        vector<T*> weapons;
+        for (auto& item : items) {
+            if (item.type == "weapon") {
+                weapons.push_back(&item);
+            }
+        }
+        return weapons;
+    }
+
+    void display() const {
+        if (items.empty()) {
+            cout << "Inventory is empty\n";
+            return;
+        }
+        cout << "Inventory:\n";
+        for (const auto& item : items) {
+            cout << "- " << item.getName();
+            if (item.type == "weapon") cout << " (Weapon, +" << item.value << " ATK)";
+            else if (item.type == "potion") cout << " (Potion, +" << item.value << " HP)";
+            cout << "\n";
+        }
+    }
+
+    void saveToFile(const string& filename) const {
+        try {
+            ofstream file(filename);
+            if (!file) throw runtime_error("Failed to save inventory");
+            for (const auto& item : items) {
+                file << item.name << " " << item.type << " " << item.value << " " << item.upgradeLevel << "\n";
+            }
+        }
+        catch (...) {
+            cerr << "Failed to save inventory\n";
+        }
+    }
+
+    void loadFromFile(const string& filename) {
+        try {
+            ifstream file(filename);
+            if (!file) throw runtime_error("Failed to load inventory");
+            items.clear();
+            string name, type;
+            int value, upgradeLevel;
+            while (file >> name >> type >> value >> upgradeLevel) {
+                items.emplace_back(name, type, value, upgradeLevel);
+            }
+        }
+        catch (...) {
+            cerr << "Failed to load inventory\n";
+        }
+    }
+
+    vector<T>& getItems() { return items; }
+    const vector<T>& getItems() const { return items; }
+};
+
+class Monster {
+protected:
+    string name;
+    int health;
+    int attack;
+    int defense;
+    vector<Item> loot;
+    bool boss;
+
+    void generateLoot() {
+        static random_device rd;
+        static mt19937 gen(rd());
+        uniform_int_distribution<> lootChance(1, 100);
+
+        if (boss || lootChance(gen) > 70) {
+            uniform_int_distribution<> itemType(1, 3);
+            if (itemType(gen) == 1) {
+                try {
+                    loot.emplace_back(boss ? "Epic Sword" : "Rusty Sword", "weapon", boss ? 15 : 3);
+                }
+                catch (...) {}
+            }
+            else {
+                try {
+                    loot.emplace_back(boss ? "Great Potion" : "Health Potion", "potion", boss ? 50 : 15);
+                }
+                catch (...) {}
+            }
+        }
+    }
+
+public:
+    Monster(const string& n, int h, int a, int d, bool b = false) :
+        name(n.length() > 50 ? n.substr(0, 50) : n),
+        health(max(1, h)),
+        attack(max(1, a)),
+        defense(max(0, d)),
+        boss(b)
+    {
+        generateLoot();
+    }
+
+    virtual ~Monster() {}
+
+    virtual void attackTarget(Character& target);
+
+    virtual void displayInfo() const {
+        cout << name << " [HP: " << health << ", ATK: " << attack << ", DEF: " << defense << "]";
+        if (boss) cout << " (BOSS)";
+        cout << "\n";
+    }
+
+    bool isAlive() const { return health > 0; }
+    string getName() const { return name; }
+    int getHealth() const { return health; }
+    int getDefense() const { return defense; }
+    void takeDamage(int damage) { health -= max(1, damage); }
+
+    vector<Item> getLoot() {
+        vector<Item> safeLoot;
+        for (auto& item : loot) {
+            safeLoot.push_back(item);
+        }
+        return safeLoot;
+    }
+
+    bool isBoss() const { return boss; }
+};
+
+class Character {
+private:
+    string name;
+    int health;
+    int maxHealth;
+    int baseAttack;
+    int attack;
+    int baseDefense;
+    int defense;
+    int level;
+    int experience;
+    Inventory<Item> inventory;
+    bool isDefending;
+    int monstersDefeated;
+    Item* currentWeapon;
+
+    Item combineWeapons(Item& weapon1, Item& weapon2) {
+        string newName = (weapon1.name.substr(0, weapon1.name.size() / 2) + weapon2.name.substr(weapon2.name.size() / 2)).substr(0, 50);
+        int newValue = (weapon1.value + weapon2.value) * 1.5;
+        return Item(newName, "weapon", newValue, max(weapon1.upgradeLevel, weapon2.upgradeLevel) + 1);
+    }
+
+public:
+    Character(const string& n, int h, int a, int d) :
+        name(n.length() > 50 ? n.substr(0, 50) : n),
+        health(max(1, h)),
+        maxHealth(max(1, h)),
+        baseAttack(max(1, a)),
+        attack(max(1, a)),
+        baseDefense(max(0, d)),
+        defense(max(0, d)),
+        level(1),
+        experience(0),
+        isDefending(false),
+        monstersDefeated(0),
+        currentWeapon(nullptr)
+    {
+        try {
+            inventory.addItem(Item("Small Health Potion", "potion", 20));
+        }
+        catch (...) {
+            cerr << "Failed to add initial potion\n";
+        }
+    }
+
+    void attackEnemy(Monster& enemy) {
+        if (!enemy.isAlive()) return;
+
+        int damage = max(1, attack - enemy.getDefense());
+        enemy.takeDamage(damage);
+        cout << name << " attacks " << enemy.getName() << " for " << damage << " damage!\n";
+        Logger::log(name + " attacks " + enemy.getName() + " for " + to_string(damage) + " damage!");
+
+        if (!enemy.isAlive()) {
+            monstersDefeated++;
+            int exp = enemy.isBoss() ? 200 : 50;
+            gainExperience(exp);
+        }
+    }
+
+    void defend() {
+        isDefending = true;
+        defense = baseDefense * 2;
+        cout << name << " takes a defensive stance!\n";
+    }
+
+    void endDefense() {
+        isDefending = false;
+        defense = baseDefense;
+    }
+
+    void usePotion(Item* potion) {
+        if (potion && potion->type == "potion") {
+            heal(potion->value);
+            inventory.removeItem(potion->getName());
+        }
+    }
+
+    void equipWeapon(Item* weapon) {
+        if (weapon && weapon->type == "weapon") {
+            currentWeapon = weapon;
+            attack = baseAttack + weapon->value;
+            cout << "Equipped " << weapon->getName() << " (+" << weapon->value << " ATK)\n";
+        }
+    }
+
+    void combineItems() {
+        vector<Item*> weapons = inventory.findWeapons();
+        if (weapons.size() >= 2) {
+            cout << "\nChoose first weapon to combine:\n";
+            for (size_t i = 0; i < weapons.size(); ++i) {
+                cout << i + 1 << ". " << weapons[i]->getName() << "\n";
+            }
+            int choice1, choice2;
+            cin >> choice1;
+            cout << "Choose second weapon to combine:\n";
+            cin >> choice2;
+
+            if (choice1 > 0 && choice1 <= weapons.size() &&
+                choice2 > 0 && choice2 <= weapons.size() && choice1 != choice2) {
+                try {
+                    Item newWeapon = combineWeapons(*weapons[choice1 - 1], *weapons[choice2 - 1]);
+                    inventory.removeItem(weapons[choice1 - 1]->getName());
+                    inventory.removeItem(weapons[choice2 - 1]->getName());
+                    inventory.addItem(newWeapon);
+                    equipWeapon(inventory.findItem(newWeapon.getName()));
+                    cout << "Created new weapon: " << newWeapon.getName() << "!\n";
+                }
+                catch (...) {
+                    cerr << "Failed to combine weapons\n";
+                }
+            }
+        }
+        else {
+            cout << "Need at least 2 weapons to combine\n";
+        }
+    }
+
+    void heal(int amount) {
+        health = min(health + amount, maxHealth);
+        cout << name << " heals for " << amount << " HP!\n";
+    }
+
+    void gainExperience(int exp) {
+        experience += exp;
+        if (experience >= 100) {
+            level++;
+            experience -= 100;
+            maxHealth += 10;
+            health = maxHealth;
+            baseAttack += 2;
+            baseDefense += 1;
+            attack = baseAttack + (currentWeapon ? currentWeapon->value : 0);
+            defense = baseDefense;
+            cout << name << " leveled up to level " << level << "!\n";
+        }
+    }
+
+    void takeDamage(int damage) {
+        int actualDamage = max(1, damage - defense);
+        health -= actualDamage;
+        if (health <= 0) {
+            throw runtime_error(name + " has been defeated!");
+        }
+        cout << name << " takes " << actualDamage << " damage!\n";
+        if (isDefending) endDefense();
+    }
+
+    void displayInfo() const {
+        cout << "\n=== Character Info ===\n";
+        cout << name << " [HP: " << health << "/" << maxHealth
+            << ", ATK: " << attack << " (Base: " << baseAttack << " + Weapon: " << (currentWeapon ? currentWeapon->value : 0) << ")"
+            << ", DEF: " << defense
+            << ", LVL: " << level << ", EXP: " << experience << "/100]\n";
+        if (currentWeapon) {
+            cout << "Equipped weapon: " << currentWeapon->getName() << "\n";
+        }
+        cout << "Monsters defeated: " << monstersDefeated << "\n";
+        cout << "=====================\n";
+    }
+
+    void addToInventory(const Item& item) {
+        try {
+            inventory.addItem(item);
+        }
+        catch (...) {
+            cerr << "Failed to add item to inventory\n";
+        }
+    }
+
+    void showInventory() {
+        cout << "\n=== Inventory ===\n";
+        inventory.display();
+        cout << "================\n";
+    }
+
+    Item* findPotion() {
+        for (auto& item : inventory.getItems()) {
+            if (item.type == "potion") {
+                return &item;
+            }
+        }
+        return nullptr;
+    }
+
+    void equipFromInventory() {
+        vector<Item*> weapons = inventory.findWeapons();
+        if (weapons.empty()) {
+            cout << "No weapons in inventory!\n";
+            return;
+        }
+
+        cout << "\nChoose weapon to equip:\n";
+        for (size_t i = 0; i < weapons.size(); ++i) {
+            cout << i + 1 << ". " << weapons[i]->getName() << "\n";
+        }
+        int choice;
+        cin >> choice;
+
+        if (choice > 0 && choice <= weapons.size()) {
+            equipWeapon(weapons[choice - 1]);
+        }
+        else {
+            cout << "Invalid choice!\n";
+        }
+    }
+
+    void saveGame(const string& filename) const {
+        try {
+            ofstream file(filename);
+            if (!file) throw runtime_error("Failed to save game");
+            file << name << "\n" << health << "\n" << maxHealth << "\n"
+                << baseAttack << "\n" << baseDefense << "\n"
+                << level << "\n" << experience << "\n" << monstersDefeated << "\n";
+            inventory.saveToFile(filename + "_inv");
+        }
+        catch (...) {
+            cerr << "Failed to save game\n";
+        }
+    }
+
+    void loadGame(const string& filename) {
+        try {
+            ifstream file(filename);
+            if (!file) throw runtime_error("Failed to load game");
+            file >> name >> health >> maxHealth >> baseAttack >> baseDefense >> level >> experience >> monstersDefeated;
+            attack = baseAttack + (currentWeapon ? currentWeapon->value : 0);
+            defense = baseDefense;
+            inventory.loadFromFile(filename + "_inv");
+        }
+        catch (...) {
+            cerr << "Failed to load game\n";
+        }
+    }
+
+    string getName() const { return name; }
+    int getHealth() const { return health; }
+    int getDefense() const { return defense; }
+    bool getIsDefending() const { return isDefending; }
+    int getMonstersDefeated() const { return monstersDefeated; }
+};
+
+void Monster::attackTarget(Character& target) {
+    int damage = max(1, attack - target.getDefense());
+    target.takeDamage(damage);
+    cout << getName() << " attacks " << target.getName() << " for " << damage << " damage!\n";
+}
+
+class Goblin : public Monster {
+public:
+    Goblin(bool boss = false) : Monster("Goblin", boss ? 60 : 30, boss ? 16 : 8, boss ? 4 : 2, boss) {
+        if (boss || rand() % 100 > 50) {
+            try {
+                loot.emplace_back(boss ? "Goblin King's Dagger" : "Goblin Dagger", "weapon", boss ? 10 : 5);
+            }
+            catch (...) {}
+        }
+    }
+};
+
+class Dragon : public Monster {
+public:
+    Dragon(bool boss = false) : Monster("Dragon", boss ? 200 : 100, boss ? 40 : 20, boss ? 20 : 10, boss) {
+        try {
+            loot.emplace_back(boss ? "Dragon King Scale" : "Dragon Scale", "weapon", boss ? 20 : 10);
+            loot.emplace_back(boss ? "Dragon Essence" : "Dragon Blood", "potion", boss ? 100 : 50);
+        }
+        catch (...) {}
+    }
+};
+
+class Skeleton : public Monster {
+public:
+    Skeleton(bool boss = false) : Monster("Skeleton", boss ? 80 : 40, boss ? 20 : 10, boss ? 10 : 5, boss) {
+        if (boss || rand() % 100 > 70) {
+            try {
+                loot.emplace_back(boss ? "Skeleton Lord's Blade" : "Bone Sword", "weapon", boss ? 15 : 7);
+            }
+            catch (...) {}
+        }
+    }
+};
+
+class Game {
+private:
+    Character player;
+    vector<unique_ptr<Monster>> monsters;
+    random_device rd;
+    mt19937 gen;
+    vector<string> battleLog;
+
+    void clearScreen() {
+        system("cls");
+    }
+
+    void printSeparator() {
+        cout << "\n========================================\n";
+    }
+
+    void printBattleLog() {
+        if (!battleLog.empty()) {
+            cout << "\n=== Battle Log ===\n";
+            for (const auto& msg : battleLog) {
+                cout << msg << "\n";
+            }
+            cout << "=================\n";
+        }
+    }
+
+    void generateMonsters() {
+        monsters.clear();
+        bool boss = player.getMonstersDefeated() > 0 && player.getMonstersDefeated() % 10 == 0;
+
+        monsters.push_back(make_unique<Goblin>(false));
+        monsters.push_back(make_unique<Skeleton>(false));
+
+       
+        uniform_int_distribution<> monsterType(1, 3);
+        switch (monsterType(gen)) {
+        case 1: monsters.push_back(make_unique<Goblin>(boss)); break;
+        case 2: monsters.push_back(make_unique<Dragon>(boss)); break;
+        case 3: monsters.push_back(make_unique<Skeleton>(boss)); break;
+        }
+
+        shuffle(monsters.begin(), monsters.end(), gen);
+    }
+
+    void exploreArea() {
+        clearScreen();
+        cout << "You start exploring the area...\n";
+        this_thread::sleep_for(chrono::seconds(1));
+
+        uniform_int_distribution<> eventDist(1, 100);
+        int event = eventDist(gen);
+
+        if (event <= 30) {
+            uniform_int_distribution<> itemDist(1, 2);
+            if (itemDist(gen) == 1) {
+                try {
+                    Item foundItem("Found Health Potion", "potion", 15);
+                    player.addToInventory(foundItem);
+                    cout << "You found a Health Potion!\n";
+                }
+                catch (...) {
+                    cerr << "Failed to create health potion\n";
+                }
+            }
+            else {
+                try {
+                    Item foundItem("Old Sword", "weapon", 2);
+                    player.addToInventory(foundItem);
+                    cout << "You found an Old Sword!\n";
+                }
+                catch (...) {
+                    cerr << "Failed to create old sword\n";
+                }
+            }
+        }
+        else if (event <= 60) {
+            cout << "You didn't find anything interesting.\n";
+        }
+        else {
+            cout << "A monster ambushes you!\n";
+            this_thread::sleep_for(chrono::seconds(1));
+            fight();
+        }
+        printSeparator();
+        cout << "Press enter to continue...";
+        cin.ignore();
+        cin.get();
+    }
+
+    void fight() {
+        if (monsters.empty()) {
+            cout << "No more monsters to fight!\n";
+            return;
+        }
+
+        battleLog.clear();
+        auto& monster = monsters.back();
+        while (player.getHealth() > 0 && monster->isAlive()) {
+            clearScreen();
+            player.displayInfo();
+            cout << "\nCurrent enemy:\n";
+            monster->displayInfo();
+            printBattleLog();
+
+            printSeparator();
+            cout << "Choose action:\n";
+            cout << "1. Attack\n2. Defend\n3. Use Potion\n4. Equip Weapon\n5. Flee\n";
+            printSeparator();
+
+            int choice;
+            if (!(cin >> choice)) {
+                cin.clear();
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                cout << "Invalid input! Please enter a number.\n";
+                this_thread::sleep_for(chrono::seconds(1));
+                continue;
+            }
+
+            switch (choice) {
+            case 1:
+                player.attackEnemy(*monster);
+                battleLog.push_back(player.getName() + " attacks " + monster->getName() + "!");
+                break;
+            case 2:
+                player.defend();
+                battleLog.push_back(player.getName() + " takes defensive stance!");
+                break;
+            case 3: {
+                Item* potion = player.findPotion();
+                if (potion) {
+                    player.usePotion(potion);
+                    battleLog.push_back(player.getName() + " uses " + potion->getName() + "!");
+                }
+                else {
+                    cout << "No potions available!\n";
+                }
+                break;
+            }
+            case 4:
+                player.equipFromInventory();
+                continue;
+            case 5:
+                cout << "You fled from battle!\n";
+                this_thread::sleep_for(chrono::seconds(1));
+                return;
+            default:
+                cout << "Invalid choice, you hesitate!\n";
+                this_thread::sleep_for(chrono::seconds(1));
+                continue;
+            }
+
+            if (monster->isAlive()) {
+                monster->attackTarget(player);
+                battleLog.push_back(monster->getName() + " attacks " + player.getName() + "!");
+            }
+
+            this_thread::sleep_for(chrono::seconds(1));
+        }
+
+        if (!monster->isAlive()) {
+            try {
+                vector<Item> loot = monster->getLoot();
+                for (auto& item : loot) {
+                    player.addToInventory(item);
+                    cout << "Got " << item.getName() << " from " << monster->getName() << "!\n";
+                }
+                monsters.pop_back();
+                this_thread::sleep_for(chrono::seconds(2));
+            }
+            catch (...) {
+                cerr << "Error getting loot\n";
+                monsters.pop_back();
+            }
+        }
+    }
+
+public:
+    Game(const string& playerName) : player(playerName, 100, 10, 5), gen(rd()) {
+        generateMonsters();
+    }
+
+    void start() {
+        try {
+            while (true) {
+                clearScreen();
+                player.displayInfo();
+
+                printSeparator();
+                cout << "Choose action:\n";
+                cout << "1. Fight\n2. Heal\n3. Inventory\n4. Explore\n5. Combine Weapons\n6. Equip Weapon\n7. Save\n8. Load\n9. Exit\n";
+                printSeparator();
+
+                int choice;
+                if (!(cin >> choice)) {
+                    cin.clear();
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                    cout << "Invalid input! Please enter a number.\n";
+                    this_thread::sleep_for(chrono::seconds(1));
+                    continue;
+                }
+
+                switch (choice) {
+                case 1:
+                    fight();
+                    break;
+                case 2:
+                    player.heal(20);
+                    this_thread::sleep_for(chrono::seconds(1));
+                    break;
+                case 3:
+                    player.showInventory();
+                    cout << "Press enter to continue...";
+                    cin.ignore();
+                    cin.get();
+                    break;
+                case 4:
+                    exploreArea();
+                    break;
+                case 5:
+                    player.combineItems();
+                    this_thread::sleep_for(chrono::seconds(1));
+                    break;
+                case 6:
+                    player.equipFromInventory();
+                    this_thread::sleep_for(chrono::seconds(1));
+                    break;
+                case 7:
+                    player.saveGame("save.txt");
+                    cout << "Game saved!\n";
+                    this_thread::sleep_for(chrono::seconds(1));
+                    break;
+                case 8:
+                    player.loadGame("save.txt");
+                    cout << "Game loaded!\n";
+                    this_thread::sleep_for(chrono::seconds(1));
+                    break;
+                case 9:
+                    return;
+                default:
+                    cout << "Invalid choice\n";
+                    this_thread::sleep_for(chrono::seconds(1));
+                }
+
+                if (monsters.empty()) {
+                    generateMonsters();
+                }
+            }
+        }
+        catch (const exception& e) {
+            cerr << "Game over: " << e.what() << endl;
+            this_thread::sleep_for(chrono::seconds(3));
+        }
+    }
+};
+
+int main() {
+    try {
+        cout << "Enter your name: ";
+        string name;
+        getline(cin, name);
+
+        Game game(name);
+        game.start();
+    }
+    catch (...) {
+        cerr << "Fatal error occurred. Game will exit.\n";
+        return 1;
+    }
+
+    return 0;
+}
