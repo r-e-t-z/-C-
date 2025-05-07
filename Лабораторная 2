@@ -3,7 +3,6 @@
 
 using namespace std;
 
-// Предварительные объявления классов
 class Weapon;
 class Monster;
 
@@ -15,13 +14,13 @@ private:
     int defense;
 
 public:
-    // Конструктор
+
     Character(const string& n, int h, int a, int d)
         : name(n), health(h), attack(a), defense(d) {
         cout << "Character " << name << " created!\n";
     }
 
-    // Деструктор
+
     ~Character() {
         cout << "Character " << name << " destroyed!\n";
     }
@@ -31,7 +30,6 @@ public:
             << ", Attack: " << attack << ", Defense: " << defense << endl;
     }
 
-    // Метод для атаки (объявление)
     void attackWith(Weapon& weapon, Monster& target);
 
     string getName() const { return name; }
@@ -39,7 +37,6 @@ public:
     int getAttack() const { return attack; }
     int getDefense() const { return defense; }
 
-    // Сеттер для здоровья
     void setHealth(int h) { health = h; }
 };
 
@@ -50,18 +47,15 @@ private:
     double weight;
 
 public:
-    // Конструктор
     Weapon(const string& n, int d, double w)
         : name(n), damage(d), weight(w) {
         cout << "Weapon " << name << " created!\n";
     }
 
-    // Деструктор
     ~Weapon() {
         cout << "Weapon " << name << " destroyed!\n";
     }
 
-    // Метод для вывода информации об оружии
     void displayInfo() const {
         cout << "Weapon: " << name << ", Damage: " << damage
             << ", Weight: " << weight << "kg\n";
@@ -79,13 +73,11 @@ private:
     int defense;
 
 public:
-    // Конструктор
     Monster(const string& n, int h, int a, int d)
         : name(n), health(h), attack(a), defense(d) {
         cout << "Monster " << name << " created!\n";
     }
 
-    // Деструктор
     ~Monster() {
         cout << "Monster " << name << " destroyed!\n";
     }
@@ -95,9 +87,8 @@ public:
             << ", Attack: " << attack << ", Defense: " << defense << endl;
     }
 
-    // Метод для получения урона
     void takeDamage(int damage) {
-        int actualDamage = damage - defense / 2; // Учитываем защиту
+        int actualDamage = damage - defense / 2;
         if (actualDamage < 0) actualDamage = 0;
         health -= actualDamage;
         if (health < 0) health = 0;
@@ -112,7 +103,6 @@ public:
     int getDefense() const { return defense; }
 };
 
-// Реализация метода атаки 
 void Character::attackWith(Weapon& weapon, Monster& target) {
     cout << getName() << " attacks " << target.getName()
         << " with " << weapon.getName() << "!\n";
@@ -121,20 +111,17 @@ void Character::attackWith(Weapon& weapon, Monster& target) {
 }
 
 int main() {
-    // Создаём персонажа и монстра
     Character hero("Knight", 100, 15, 10);
     Monster dragon("Necromancer", 100, 25, 20);
 
     cout << "\n";
 
-    // Создаём оружие
     Weapon Sword("Excalibur", 30, 7.8);
     Weapon Staff("Staff of Dead", 40, 4.2);
     Weapon Crossbow("Crossbow", 20, 2.3);
 
     cout << "\n";
 
-    // Выводим информацию
     hero.displayInfo();
     dragon.displayInfo();
 
@@ -143,7 +130,6 @@ int main() {
     Staff.displayInfo();
     Crossbow.displayInfo();
 
-    // Выбор оружия для атаки
     cout << "Choose a weapon to attack (1 - Sword, 2 - Staff, 3 - Crossbow): ";
     int choice;
     cin >> choice;
@@ -164,10 +150,8 @@ int main() {
         selectedWeapon = &Sword;
     }
 
-    // Атака выбранным оружием
     hero.attackWith(*selectedWeapon, dragon);
 
-    // Проверяем состояние после атаки
     cout << "\nAfter attack:\n";
     dragon.displayInfo();
 
